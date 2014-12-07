@@ -155,38 +155,6 @@ class Entry
     end
   end
 
-  # return true if well formed
-  # def well_formed?
-  #   if @orig_name =~ /^(.+)\.(\w+)$/
-  #     @remain = $1
-  #     @ext = $2
-  #   end
-  #   parts = @title.split(" - ")
-  #   if parts.length != 3
-  #     return false
-  #   end
-
-  #   if not ["SexArt", "JoyMii", "X-Art", "WowGrils"].include?(parts[0])
-  #     return false
-  #   end
-  #   @label = parts[0]
-
-  #   names = parts[1].split(", ")
-  #   names.each do |name|
-  #     if name =~ %r{[[:alpha:]]+( [[:alpha:]]+)?}
-  #     else
-  #       return false
-  #     end
-  #   end
-  #   @names = names
-  #   if parts[2] =~ /^(.+)\.(\w+)$/
-  #     self.names = names
-  #     return Entry.new(parts[0], names, $1, $2)
-  #   else
-  #     return nil
-  #   end
-  # end
-
   def parse_ext()
     if @orig_name =~ /^(.+)\.(\w+)$/
       @remain = $1
@@ -302,92 +270,8 @@ class Entry
     end
 
     return @label && @names && @names.length > 0 && @ext
-
-    # t = @remain.split(".").map { |x| x.capitalize }.join(" ")
-    # t = t.split(" ").map { |x| x.capitalize }.join(" ")
-    # pos = 0
-    # ns = []
-    # while name_pos = start_with_names?(t, pos, $names) 
-    #   (name, pos) = name_pos
-    #   ns += [name]
-    # end
-    # while start_with?(t, pos, "- ")
-    #   pos += 2
-    # end
-    # TO_REMOVE.each do |str|
-    #   if t.gsub!(str, "")
-    #     break
-    #   end
-    # end
-    # if ns.length > 0 || t[pos..-1] != title
-    #   self.names += ns
-    #   self.title = t[pos..-1]
-    #   return true
-    # else
-    #   return false
-    # end
   end
 end
-
-# def register_words_list(words)
-#   if words.length == 4
-#     register_name(words[0] + " " + words[1])
-#     register_name(words[2] + " " + words[3])
-#   else
-#     register_name(words.join(" "))
-#   end
-# end
-
-# def find_name(file)
-#   entry = well_formed?(file)
-#   if entry
-#     entry.names.each do |name| register_name(name) end
-#     return
-#   end
-#   if file =~ /^SexArt - (.+) - (.+) \[1080p\]\.[^.]+$/
-#     register_name($2)
-#   elsif file =~ /^SexArt - (.+?) - .+\.[^.]+$/
-#     $1.split(", ").each { |n| register_name(n) }
-#   elsif file =~ /^sart\.\d\d\.\d\d\.\d\d\.(.+?)\.and\..+$/
-#     register_words_list($1.split(".").map { |x| x.capitalize })
-#   elsif file =~ /^\[SexArt\] ([^-]+) -.+$/
-#     $1.split(", ").each { |n| register_name(n) }
-#   elsif file =~ /^SexArt\.[\d.]*(.+?)\.And\..+$/
-#     register_words_list($1.split("."))
-#   elsif file =~ /^SexArt\.com - (.+?) - .+$/
-#     register_name($1)
-#   elsif file =~ /^TayTO-SexArt\.\d\d\.\d\d\.\d\d\.(.+?)\.And\..+$/
-#     register_name($1.gsub(".", " "))
-#   elsif file =~ /^SexArt\.([^.]+)\.([A-Z])\..+$/
-#     register_name("#{$1} #{$2}")
-#   elsif file =~ /^joymii\.\d\d\.\d\d\.\d\d\.([^.]+)\.([^.])\.and\.([^.]+)\.([^.])\..+$/ ||
-#         file =~ /^Joymii - (\w+) (\w) and (\w+) (\w) - .+$/
-#     register_name("#{$1.capitalize} #{$2.capitalize}")
-#     register_name("#{$3.capitalize} #{$4.capitalize}")
-#   elsif file =~ /^joymii\.\d\d\.\d\d\.\d\d\.([^.]+)\.([^.])\..+$/ ||
-#         file =~ /^Joymii ([^ ]+) ([^ ]) .+$/
-#     register_name("#{$1.capitalize} #{$2.capitalize}")
-#   elsif file =~ /^joymii\.\d\d\.\d\d\.\d\d\.([^.]+)\.and\.([^.]+)\.(\w)\..+$/
-#     register_name("#{$1.capitalize}")
-#     register_name("#{$2.capitalize} #{$3.capitalize}")
-#   elsif file =~ /^joymii\.\d\d\.\d\d\.\d\d\.([^.]+)\.and\.([^.]+)\..+$/
-#     register_name("#{$1.capitalize}")
-#     register_name("#{$2.capitalize}")
-#   elsif file =~ /^joymii\.\d\d\.\d\d\.\d\d\.([^.]+)\..+$/
-#     register_name($1.capitalize)
-#   elsif file =~ /^JoyMii - (.+?) - .+$/
-#     $1.split(", ").each { |n| register_name(n) }
-#   elsif file =~ /^JoyMii - \d\d \d\d \d\d (\w+ \w) And (\w+ \w) .+$/
-#     register_name($1)
-#     register_name($2)
-#   end
-# end
-
-# def find_names(folder)
-#   Dir.foreach(folder) do |file|
-#     find_name(file)
-#   end
-# end
 
 def match?(str, pos, pat)
   str.index(pat, pos) == pos
@@ -404,96 +288,6 @@ def match_any?(title, pos, names)
   end
   return nil
 end
-
-# def rename_title(name)
-#   title = name.split(".").map { |x| x.capitalize }.join(" ")
-#   title = title.split(" ").map { |x| x.capitalize }.join(" ")
-#   pos = 0
-#   names = []
-#   while name_pos = start_with_names?(title, pos, $names) 
-#     (name, pos) = name_pos
-#     names += [name]
-#   end
-#   while start_with?(title, pos, "- ")
-#     pos += 2
-#   end
-#   TO_REMOVE.each do |str|
-#     if title.gsub!(str, "")
-#       break
-#     end
-#   end
-#   if names.length > 0
-#     return "#{names.join(", ")} - #{title[pos .. -1]}"
-#   else
-#     return "#{title}"
-#   end
-# end
-
-# return nil means file name is in correct form
-# def rename(file)
-#   if file =~ /^SexArt\.com - (.+?) - (.+) \[.+\].([^.]+)$/
-#     title = rename_title("#{$1} #{$2}")
-#     return "SexArt - #{title}.#{$3}"
-#   elsif file =~ /^sart\.\d\d\.\d\d\.\d\d\.(.+)\.([^.]+)$/ ||
-#         file =~ /^SexArt\.\d\d\.\d\d\.\d\d\.(.+)\.([^.]+)$/ ||
-#         file =~ /^SexArt\.(.+)\.([^.]+)$/ ||
-#         file =~ /^TayTO-SexArt\.\d\d\.\d\d\.\d\d\.(.+)\.([^.]+)$/ ||
-#         file =~ /^SexArt (.+) 1080p\.([^.]+)$/
-#     title = rename_title($1)
-#     return "SexArt - #{title}.#{$2}"
-#   elsif file =~ /^SexArt - (.+) - (.+) \[1080p\]\.([^.]+)$/
-#     title = rename_title("#{$2} #{$1}")
-#     return "SexArt - #{title}.#{$3}"
-#   elsif file =~ /^\[SexArt\] (.+) - (.+) \(1080p\).*\.([^.]+)$/
-#     title = rename_title("#{$1} #{$2}")
-#     return "SexArt - #{title}.#{$3}"
-#   elsif file =~ /^sexart\.\d\d\.\d\d\.\d\d\.([^.]+)\.([a-z])\.(.+)\.([^.]+)$/
-#     title = rename_title("#{$1} #{$2} #{$3}")
-#     return "SexArt - #{title}.#{$4}"
-#   elsif file =~ /^Joymii - (\w+ \w and \w+ \w) - (.+)\.([^.]+)$/
-#     title = rename_title("#{$1} #{$2}")
-#     return "JoyMii - #{title}.#{$3}"
-#   elsif file =~ /^JoyMii - ([^-]+)- (- )+(.+)\.([^.]+)$/
-#     title = rename_title("#{$1} #{$3}")
-#     return "JoyMii - #{title}.#{$4}"
-#   elsif file =~ /^joymii\.\d\d\.\d\d\.\d\d\.(.+)\.([^.]+)$/ ||
-#         file =~ /^Joymii\.(.+)\.([^.]+)$/ ||
-#         file =~ /^JoyMii - \d\d \d\d \d\d (.+)\.([^.]+)$/ ||
-#         file =~ /^JoyMii - ([^-]+)\.([^.]+)$/ ||
-#         file =~ /^Joymii - (.+)\.([^.]+)$/ ||
-#         file =~ /^Joymii (.+)\.(\w+)$/ ||
-#         file =~ /^JoyMii - (.+) Xxx \w+\.(\w+)$/ ||
-#         file =~ /^JoyMii (.+) Xxx 720p \w+\.(\w+)$/
-#     title = rename_title($1)
-#     return "JoyMii - #{title}.#{$2}"
-#   elsif file =~ /^SexArt - .+? - .+$/ ||
-#         file =~ /^JoyMii - .+? - .+$/
-#     # correct one
-#     return nil
-#   else
-#     puts red(file)
-#   end
-#   return file
-# end
-
-# def rename_files_(folder)
-#   Dir.foreach(folder) do |file|
-#     if file == "." || file == ".." || file == ".DS_Store"
-#       next
-#     end
-#     renamed = rename(file)
-#     if not renamed
-#       if $verbose
-#         puts green(file)
-#       end
-#     elsif renamed != file
-#       unless $test
-#         `mv "#{folder}/#{file}" "#{folder}/#{renamed}"`
-#       end
-#       puts "#{renamed} <= #{red(file)}"
-#     end
-#   end
-# end
 
 # returns array of entries in the folders
 def get_entries(*folders)
@@ -525,41 +319,11 @@ def process_entries(entries)
   return unknown
 end
 
-# def rename(folder, file)
-#   entry = Entry.new(folder, file)
-#   entry.parse()
-#   entry.new_filename()
-# end
-
 def copy_file(src_folder, dst_folder, file)
   entry = Entry.new(src_folder, dst_folder, file)
   entry.parse()
   if entry.keep?()
     entry.copy()
-    # renamed = rename(dst, file)
-    # dst_path = "#{dst}/#{renamed}"
-    # if File.exist?(dst_path)
-    #   puts "  exists #{dst_path}"
-    #   src_size = File.size(src_path)
-    #   dst_size = File.size(dst_path)
-    #   if src_size == dst_size
-    #     puts "  same size"
-    #   elsif src_size > dst_size
-    #     puts "  src=#{src_size} > dst=#{dst_size}"
-    #     puts "  overwrite"
-    #     unless $test
-    #       `cp -n "#{src_path}" "#{dst}"`
-    #     end
-    #   else
-    #     puts "  src=#{src_size} < dst=#{dst_size}"
-    #     puts "  ignore"
-    #   end
-    # else
-    #   puts "  copying #{file} to #{dst}"
-    #   unless $test
-    #     `cp -n "#{src_path}" "#{dst}"`
-    #   end
-    # end
   else
     puts "  skip #{file}"
   end
@@ -671,16 +435,6 @@ ARGV.each do |arg|
 end
 
 process_existing_files()
-
-# find_names("/Users/johndoe/Raid2/porn/SexArt")
-# find_names("/Users/johndoe/Raid2/porn/JoyMii")
-
-# # $names = $names_dict.keys.sort.reverse
-# if $verbose
-#   puts $names
-# end
-# rename_files("/Users/johndoe/Raid2/porn/SexArt")
-# rename_files("/Users/johndoe/Raid2/porn/JoyMii")
 
 list = `transmission-remote --list`
 list.split("\n").each do |line|
