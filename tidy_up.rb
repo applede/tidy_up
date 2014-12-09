@@ -21,6 +21,18 @@ def move_file(src, dst)
   end
 end
 
+def remove_dir(dir)
+  unless $test
+    `rm -rf "#{dir}"`
+  end
+end
+
+def remove_file(path)
+  unless $test
+    `rm "#{path}"`
+  end
+end
+
 def red(str)
   "\e[31m#{str}\e[0m"
 end
@@ -49,11 +61,20 @@ def grey(str)
   "\e[37m#{str}\e[0m"
 end
 
-# fill names to help recognize names
-$names = ["Alexa Tomas", "Tracy Lindsay", "Aria Salazar", "Candice Luka", "Cayenne Klein", "Eva Alegra",
-          "Ferrera Gomez", "Nici Dee", "Paula Shy", "Tania G", "Naomi Nevena", "Bailey Ryder", "Sandy Ambrosia",
-          "Jenny Simons", "Samantha Joons", "Jessie Jazz", "Ashley Woods", "Isabella Amor", "The Game",
-          "Kamikaze Love", "Darla", "Kattie Gold", "Candice Luca", "Eveline"]
+def pad(str, width)
+  str = str.to_s
+  if str.length < width
+    str + " " * (width - str.length)
+  else
+    str
+  end
+end
+
+def pretty_number(num)
+  num.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse
+end
+
+$names = []
 
 def register_name(name)
   if not $names.include?(name)
@@ -77,7 +98,8 @@ TO_REMOVE = [
   " (720p)",
   " Xxx 720p Mov-ktr",
   " Xxx B00bastic",
-  " Xxx 720p Pornalized"
+  " Xxx 720p Pornalized",
+  " 1080"
 ]
 
 class Entry
@@ -94,13 +116,15 @@ class Entry
   def to_s
     if @label && @names && @names.length > 0
       "#{@label} - #{green(@names.join(", "))} - #{cyan(@remain)}.#{@ext}"
+    elsif @label
+      red("#{@label} - #{@remain}.#{@ext}")
     else
-      "#{@remain}.#{@ext}"
+      red("#{@remain}.#{@ext}")
     end
   end
 
   def keep?()
-    ["mp4", "mkv", "avi", "smi"].include?(@ext)
+    ["mp4", "mkv", "MKV", "avi", "smi"].include?(@ext)
   end
 
   def new_filename
@@ -118,12 +142,28 @@ class Entry
   end
 
   def rename()
-    new_path = "#{@dst_folder}/#{new_filename()}"
-    if File.exist?(new_path)
-      puts red("  file exist #{new_path}")
+    src_path = "#{@src_folder}/#{@orig_name}"
+    dst_path = "#{@dst_folder}/#{new_filename()}"
+    if File.exist?(dst_path)
+      puts "  #{red('file exist')} #{pad(self, 64)} <= #{@orig_name}"
+      src_size = File.size(src_path)
+      dst_size = File.size(dst_path)
+      if src_size == dst_size
+        puts "    same size => #{green('delete src')}"
+        remove_file(src_path)
+      elsif src_size > dst_size
+        puts "    src=#{pretty_number(src_size)} > dst=#{pretty_number(dst_size)} => #{yellow('overwrite')}"
+        unless $test
+          `mv -f "#{src_path}" "#{dst_path}"`
+        end
+      else
+        puts "    src=#{pretty_number(src_size)} < dst=#{pretty_number(dst_size)} => #{yellow('delete src')}"
+        remove_file(src_path)
+      end
     else
+      puts "  #{pad(self, 75)} <= #{@orig_name}"
       if not $test
-        `mv "#{@src_folder}/#{@orig_name}" "#{@dst_folder}/#{new_filename()}"`
+        `mv "#{src_path}" "#{dst_path}"`
       end
     end
   end
@@ -138,17 +178,15 @@ class Entry
       if src_size == dst_size
         puts green("  same size")
       elsif src_size > dst_size
-        puts "  src=#{src_size} > dst=#{dst_size}"
-        puts yellow("  overwrite")
+        puts "  src=#{pretty_number(src_size)} > dst=#{pretty_number(dst_size)} => #{yellow('overwrite')}"
         unless $test
           `cp -n "#{src_path}" "#{dst_path}"`
         end
       else
-        puts "  src=#{src_size} < dst=#{dst_size}"
-        puts green("  skip")
+        puts "  src=#{pretty_number(src_size)} < dst=#{pretty_number(dst_size)} => #{yellow('skip')}"
       end
     else
-      puts "  #{green('copy')} #{self} to #{@dst_folder}"
+      puts "  #{green('copy')} #{@orig_name} to #{@dst_folder}/#{self}"
       if not $test
         `cp "#{src_path}" "#{dst_path}"`
       end
@@ -168,10 +206,18 @@ class Entry
       @label = $1
       @remain = $2
       true
-    elsif @remain =~ /^(wowg\.\d\d\.\d\d\.\d\d\.)(.+)$/
+    elsif @remain =~ /^wowg\.\d\d\.\d\d\.\d\d\.(.+)$/
       @label = "WowGirls"
-      @remain = $2
+      @remain = $1
       true
+    elsif @remain =~ /^sart\.\d\d\.\d\d\.\d\d\.(.+)$/
+      @label = "SexArt"
+      @remain = $1
+    elsif @remain =~ /^xart\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
+          @remain =~ /^x-art_(.+)$/ ||
+          @remain =~ /^X\.Art\.\d\d\.\d\d\.\d\d\.(.+)$/
+      @label = "X-Art"
+      @remain = $1
     else
       false
     end
@@ -179,15 +225,44 @@ class Entry
 
   # return true if it is well formed name
   def parse_well_formed()
-    if @remain =~ /^ - (.+) - (\w+) \[1080p\]$/
-      @names = [$2]
+    # not to alter @remain in case of match failure
+    str = @remain.gsub(/ aka [[:alpha:]]+( [[:alpha:]]+)?/, '')       # remove aka Abc
+    str = str.gsub(/ ([[:alpha:]])\. /, ' \1 ')   # convert A. -> A
+    if str =~ /^ - (.+) - (\w+( \w+){0,2}) \[1080p\]$/
       @remain = $1
+      @names = [$2]
       register_names()
-      return true
-    end
-    if @remain =~ /^ - (\w+( \w+)*(, \w+( \w+)*)*) - (.+)$/
+      true
+    elsif str =~ /^ - (.+) - ([[:alpha:]]+( [[:alpha:]]+){0,2}(, \w+( \w+){0,2})*) \[1080p\]$/
+      @remain = $1
+      @names = $2.split(', ')
+      register_names()
+      true
+    elsif str =~ /^ - ([[:alpha:]]+) - ([[:alpha:]]+ [[:alpha:]]) - (.+)_1080p$/
+      @remain = $3
+      @names = [$1, $2]
+      register_names()
+      true
+    elsif str =~ /^ - (\w+( \w+)?) \((.+?)\).*$/ ||
+          str =~ /^ - (\w+( \w+)?) \{(.+?)\}.*$/
+      @names = [$1]
+      @remain = $3
+      register_names()
+      true
+    elsif str =~ /^ - (\w+, \w+( \w\.)?) \((.+?)\).*$/
+      @remain = $3    # do it before gsub
+      @names = $1.split(', ').map { |x| x.gsub('.', '')}
+      register_names()
+      true
+    elsif str =~ /^ - (\w+( \w+)*(, \w+( \w+)*)*) - (.+)$/
       @names = $1.split(", ")
       @remain = $5
+      register_names()
+      true
+    elsif str =~ /^ - (Introducing (\w+)) .*$/ ||
+          str =~ /^ - ((\w+)'s Hidden Cam) .*$/
+      @names = [$2]
+      @remain = $1
       register_names()
       true
     else
@@ -197,6 +272,8 @@ class Entry
 
   def convert_dot_space()
     @remain = @remain.split(".").map { |x| x.capitalize }.join(" ")
+    @remain = @remain.split("_").map { |x| x.capitalize }.join(" ")
+    @remain = @remain.split(" ").map { |x| x.capitalize }.join(" ")
   end
 
   # return true if it is "Name A" (A is initial)
@@ -220,8 +297,7 @@ class Entry
 
   def parse_names()
     pos = 0
-    pos = skip?(pos, " - ")
-    pos = skip?(pos, " ")
+    pos = skip?(pos, "- ")
     names = []
     while name_pos = match_any?(@remain, pos, $names)
       (name, pos) = name_pos
@@ -237,7 +313,9 @@ class Entry
   end
 
   def remove_garbage()
-    if @remain =~ /^(.+) \d\d \d\d \d\d$/
+    if @remain =~ /^(.+) \d\d \d\d \d\d$/ ||
+       @remain =~ /^(.+) \(\d\d\d\d\) 1080p$/ ||
+       @remain =~ /^(.+) - HD 1080p - .+$/
       @remain = $1
     end
     TO_REMOVE.each do |str|
@@ -262,9 +340,9 @@ class Entry
         if not parse_name_initial()
           convert_dot_space()
           parse_names()
-          remove_garbage()
         end
       end
+      remove_garbage()
     elsif parse_episode()
         
     end
@@ -309,7 +387,6 @@ def process_entries(entries)
   entries.each do |entry|
     if entry.parse()
       if entry.name_changed?()
-        puts entry
         entry.rename()
       end
     else
@@ -317,6 +394,17 @@ def process_entries(entries)
     end
   end
   return unknown
+end
+
+def unrar_any(src_folder)
+  Dir.foreach(src_folder) do |file|
+    if file =~ /\.rar$/
+      puts "  #{green('unrar')} #{file}"
+      if not $test
+        `unrar e -o+ "#{src_folder}/#{file}" "#{src_folder}/"`
+      end
+    end
+  end
 end
 
 def copy_file(src_folder, dst_folder, file)
@@ -329,26 +417,11 @@ def copy_file(src_folder, dst_folder, file)
   end
 end
 
-def remove_dir(dir)
-  unless $test
-    `rm -rf "#{dir}"`
-  end
-end
-
-def remove_file(path)
-  unless $test
-    `rm "#{path}"`
-  end
-end
-
-def remove_if_src_not_exist(name)
-  src = ""
-end
-
 def process_general(src_folder, dst, name, id)
   src = "#{src_folder}/#{name}"
   if File.exist?(src)
     if File.directory?(src)
+      unrar_any(src)
       Dir.foreach(src) do |file|
         next if [".", ".."].include?(file)
         copy_file(src, dst, file)
@@ -407,20 +480,24 @@ end
 
 def process_existing_files
   unknown_entries = get_entries("/Users/johndoe/Raid2/porn/SexArt",
-                                "/Users/johndoe/Raid2/porn/JoyMii")
+                                "/Users/johndoe/Raid2/porn/JoyMii",
+                                "/Users/johndoe/Raid2/porn/X-Art")
 
   reduced = true
   i = 1
-  while reduced
+  while reduced && unknown_entries.length > 0
     old_length = unknown_entries.length
-    puts "pass #{i} renamed"
     unknown_entries = process_entries(unknown_entries)
     reduced = unknown_entries.length < old_length
     i += 1
   end
-  if unknown_entries.length > 0
+  if unknown_entries.length == 0
+    puts green("everything ok")
+  else
     puts red("unrecognized files")
-    puts unknown_entries
+    unknown_entries.each do |entry|
+      puts "#{entry.orig_name} => #{entry.remain}"
+    end
   end
 end
 
@@ -431,6 +508,8 @@ ARGV.each do |arg|
     $test = true
   elsif arg == "-v" # verbose
     $verbose = true
+  else
+    $names += [arg]
   end
 end
 
@@ -452,6 +531,8 @@ list.split("\n").each do |line|
       process_tvshow_folder("Cosmos", name, id)
     elsif name =~ /^(SexArt|WowGirls|X-Art|JoyMii)/i
       process_porn($1, name, id)
+    elsif name =~ /^(X\.Art)/i
+      process_porn('X-Art', name, id)
     else
       process_movie(name, id)
     end
