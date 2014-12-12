@@ -124,7 +124,8 @@ class Entry
   end
 
   def keep?()
-    ["mp4", "mkv", "MKV", "avi", "smi"].include?(@ext)
+    ["mp4", "mkv", "MKV", "avi", "smi"].include?(@ext) &&
+    !(@remain =~ /^RARBG.com/)
   end
 
   def new_filename
@@ -215,9 +216,14 @@ class Entry
       @remain = $1
     elsif @remain =~ /^xart\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
           @remain =~ /^x-art_(.+)$/ ||
-          @remain =~ /^X\.Art\.\d\d\.\d\d\.\d\d\.(.+)$/
+          @remain =~ /^X\.Art\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
+          @remain =~ /^x\.art\.(.+)$/
       @label = "X-Art"
       @remain = $1
+    elsif @remain =~ /^Joymii\.(.+)$/ ||
+          @remain =~ /^joymii\.\d\d\.\d\d\.\d\d\.(.+)$/
+      @label = "JoyMii"
+      @remain = $1        
     else
       false
     end
@@ -492,7 +498,9 @@ def process_existing_files
     i += 1
   end
   if unknown_entries.length == 0
-    puts green("everything ok")
+    if i == 2
+      puts green("everything ok")
+    end
   else
     puts red("unrecognized files")
     unknown_entries.each do |entry|
