@@ -4,6 +4,7 @@
 
 NORMAL_SRC = "/Users/apple/Downloads/torrents/complete"
 CP_SRC = "/Users/apple/Downloads/torrents/CouchPotato"
+SICKRAGE_SRC = "/Users/apple/Downloads/torrents/SickRage"
 TVSHOW_DST = "/Volumes/Raid3/thetvdb"
 
 def remove_torrent(id)
@@ -59,6 +60,10 @@ end
 
 def grey(str)
   "\e[37m#{str}\e[0m"
+end
+
+def inverse(str)
+  "\e[30;47m#{str}\e[0m"
 end
 
 def pad(str, width)
@@ -178,11 +183,13 @@ class Entry
       dst_size = File.size(dst_path)
       if src_size == dst_size
         puts green("  same size")
+        return true
       elsif src_size > dst_size
         puts "  src=#{pretty_number(src_size)} > dst=#{pretty_number(dst_size)} => #{yellow('overwrite')}"
         unless $test
           `cp -n "#{src_path}" "#{dst_path}"`
         end
+        return true
       else
         puts "  src=#{pretty_number(src_size)} < dst=#{pretty_number(dst_size)} => #{yellow('skip')}"
       end
@@ -321,7 +328,8 @@ class Entry
   def remove_garbage()
     if @remain =~ /^(.+) \d\d \d\d \d\d$/ ||
        @remain =~ /^(.+) \(\d\d\d\d\) 1080p$/ ||
-       @remain =~ /^(.+) - HD 1080p - .+$/
+       @remain =~ /^(.+) - HD 1080p - .+$/ ||
+       @remain =~ /^(.+) \d\d \d\d \d\d H264 Ssxxx$/
       @remain = $1
     end
     TO_REMOVE.each do |str|
@@ -333,6 +341,10 @@ class Entry
 
   def parse_episode()
     if @remain.gsub!(/ Ep(\d\d) /, ' S01E\1 ')
+      true
+    elsif @remain.gsub!(/_Ep(\d\d)_/, ' S01E\1 ')
+      true
+    elsif @remain.gsub!(/ (\d) - (\d\d) /, ' S0\1E\2 ')
       true
     else
       false
@@ -387,19 +399,21 @@ def get_entries(*folders)
   return entries
 end
 
-# returns array of unrecognized names
+# returns tuple of (number of processed entries, array of unrecognized names)
 def process_entries(entries)
   unknown = []
+  count = 0
   entries.each do |entry|
     if entry.parse()
       if entry.name_changed?()
         entry.rename()
+        count += 1
       end
     else
       unknown += [entry]
     end
   end
-  return unknown
+  return [count, unknown]
 end
 
 def unrar_any(src_folder)
@@ -423,7 +437,9 @@ def copy_file(src_folder, dst_folder, file)
   end
 end
 
+# return false means the source doesn't exist so the torrent isn't removed
 def process_general(src_folder, dst, name, id)
+  `mkdir -p "#{dst}"`
   src = "#{src_folder}/#{name}"
   if File.exist?(src)
     if File.directory?(src)
@@ -438,9 +454,10 @@ def process_general(src_folder, dst, name, id)
       remove_file(src)
     end
     remove_torrent(id)
-  else # already processed
+    return true
+  else # maybe in different folder?
     puts "  src not exists"
-    remove_torrent(id)
+    return false
   end
 end
 
@@ -449,15 +466,22 @@ def process_porn(to_folder, name, id)
 end
 
 def process_tvshow(tvshow, season, name, id)
-  process_general(NORMAL_SRC, "#{TVSHOW_DST}/#{tvshow}/Season #{season}", name, id)
+  if !process_general(SICKRAGE_SRC, "#{TVSHOW_DST}/#{tvshow}/Season #{season}", name, id)
+    if !process_general(NORMAL_SRC, "#{TVSHOW_DST}/#{tvshow}/Season #{season}", name, id)
+      remove_torrent(id)
+    end
+  end
 end
 
 def process_tvshow_folder(tvshow, name, id)
   src_folder = "#{NORMAL_SRC}/#{name}"
+  if not File.exist?(src_folder)
+    src_folder = "#{SICKRAGE_SRC}/#{name}"
+  end
+    
   dst_folder = "#{TVSHOW_DST}/#{tvshow}"
   Dir.foreach(src_folder) do |file|
     next if [".", ".."].include?(file)
-    renamed = file.gsub(/ Ep(\d\d) /, ' S01E\1 ')
     copy_file(src_folder, dst_folder, file)
   end
   remove_dir(src_folder)
@@ -470,7 +494,8 @@ def process_movie(name, id)
     title = $1
     year = $2.to_i
     if year >= 1930 && year <= 2050
-      title = title.gsub('.', ' ')
+      # title = title.gsub('.', ' ')
+      title.gsub!(/(?<!Mr)\./, ' ')
       dst_folder = "/Users/johndoe/Movie2/#{title} (#{year})"
       unless File.exist?(dst_folder)
         `mkdir "#{dst_folder}"`
@@ -489,17 +514,14 @@ def process_existing_files
                                 "/Users/johndoe/Raid2/porn/JoyMii",
                                 "/Users/johndoe/Raid2/porn/X-Art")
 
-  reduced = true
-  i = 1
-  while reduced && unknown_entries.length > 0
-    old_length = unknown_entries.length
-    unknown_entries = process_entries(unknown_entries)
-    reduced = unknown_entries.length < old_length
-    i += 1
-  end
+  total = 0
+  begin
+    (processed, unknown_entries) = process_entries(unknown_entries)
+    total += processed
+  end until processed == 0
   if unknown_entries.length == 0
-    if i == 2
-      puts green("everything ok")
+    if total == 0
+      puts green("ok")
     end
   else
     puts red("unrecognized files")
@@ -530,15 +552,24 @@ list.split("\n").each do |line|
   name = line[70..-1]
   if status == "Finished   " ||
      status == "Stopped    "
-    puts "#{cyan('processing')} #{line}"
+    puts inverse(line)
     if name =~ /CSI.+S(\d\d)E\d\d\D/
       process_tvshow("CSI Crime Scene Investigation", $1, name, id)
     elsif name =~ /The.Big.Bang.Theory.S(\d\d)E\d\d\D/
+      # don't touch for now
       process_tvshow("The Big Bang Theory", $1, name, id)
+    elsif name =~ /The\.Flash\..+?S(\d\d)E\d\d\./
+      process_tvshow("The Flash (2014)", $1, name, id)
+    elsif name =~ /K-ON!/
+      process_tvshow_folder("K-On!", name, id)
+    elsif name =~ /Infinite Stratos/
+      process_tvshow_folder("Infinite Stratos", name, id)
     elsif name =~ /Carl Sagan's Cosmos/
       process_tvshow_folder("Cosmos", name, id)
     elsif name =~ /^(SexArt|WowGirls|X-Art|JoyMii)/i
       process_porn($1, name, id)
+    elsif name =~ /^(sart\.)/i
+      process_porn('SexArt', name, id)
     elsif name =~ /^(X\.Art)/i
       process_porn('X-Art', name, id)
     else
