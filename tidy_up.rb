@@ -104,7 +104,8 @@ TO_REMOVE = [
   " Xxx 720p Mov-ktr",
   " Xxx B00bastic",
   " Xxx 720p Pornalized",
-  " 1080"
+  " 1080",
+  " Hd1080"
 ]
 
 class Entry
@@ -218,7 +219,8 @@ class Entry
       @label = "WowGirls"
       @remain = $1
       true
-    elsif @remain =~ /^sart\.\d\d\.\d\d\.\d\d\.(.+)$/
+    elsif @remain =~ /^sart\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
+	  @remain =~ /^(.+)-SexArt-1080p$/
       @label = "SexArt"
       @remain = $1
     elsif @remain =~ /^xart\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
@@ -230,7 +232,7 @@ class Entry
     elsif @remain =~ /^Joymii\.(.+)$/ ||
           @remain =~ /^joymii\.\d\d\.\d\d\.\d\d\.(.+)$/
       @label = "JoyMii"
-      @remain = $1        
+      @remain = $1
     else
       false
     end
@@ -246,9 +248,14 @@ class Entry
       @names = [$2]
       register_names()
       true
-    elsif str =~ /^ - (.+) - ([[:alpha:]]+( [[:alpha:]]+){0,2}(, \w+( \w+){0,2})*) \[1080p\]$/
+    elsif str =~ /^ - (.+) - ([[:alpha:]]+( [[:alpha:]]+){0,2}(, \w+([- ]\w+){0,2})*) \[1080p\]$/
       @remain = $1
-      @names = $2.split(', ')
+      @names = $2.split(', ').map { |x| x.gsub('-', ' ') }
+      register_names()
+      true
+    elsif str =~ /^ - (.+) - ([[:alpha:]]+( [[:alpha:]]+){0,2}( and \w+([- ]\w+){0,2})*) \[1080p\]$/
+      @remain = $1
+      @names = $2.split(' and ')
       register_names()
       true
     elsif str =~ /^ - ([[:alpha:]]+) - ([[:alpha:]]+ [[:alpha:]]) - (.+)_1080p$/
@@ -286,6 +293,7 @@ class Entry
   def convert_dot_space()
     @remain = @remain.split(".").map { |x| x.capitalize }.join(" ")
     @remain = @remain.split("_").map { |x| x.capitalize }.join(" ")
+    @remain = @remain.split("-").map { |x| x.capitalize }.join(" ")
     @remain = @remain.split(" ").map { |x| x.capitalize }.join(" ")
   end
 
@@ -362,7 +370,7 @@ class Entry
       end
       remove_garbage()
     elsif parse_episode()
-        
+
     end
 
     return @label && @names && @names.length > 0 && @ext
@@ -478,7 +486,7 @@ def process_tvshow_folder(tvshow, name, id)
   if not File.exist?(src_folder)
     src_folder = "#{SICKRAGE_SRC}/#{name}"
   end
-    
+
   dst_folder = "#{TVSHOW_DST}/#{tvshow}"
   Dir.foreach(src_folder) do |file|
     next if [".", ".."].include?(file)
@@ -505,14 +513,15 @@ def process_movie(name, id)
       puts "  invalid year"
     end
   else
-    puts "  unknown name"
+    puts red("  unknown name")
   end
 end
 
 def process_existing_files
   unknown_entries = get_entries("/Users/johndoe/Raid2/porn/SexArt",
                                 "/Users/johndoe/Raid2/porn/JoyMii",
-                                "/Users/johndoe/Raid2/porn/X-Art")
+                                "/Users/johndoe/Raid2/porn/X-Art",
+                                "/Users/johndoe/Raid2/porn/WowGirls")
 
   total = 0
   begin
@@ -566,9 +575,12 @@ list.split("\n").each do |line|
       process_tvshow_folder("Infinite Stratos", name, id)
     elsif name =~ /Carl Sagan's Cosmos/
       process_tvshow_folder("Cosmos", name, id)
+    elsif name =~ /Homeland\.S(\d\d)E\d\d\..+/
+      process_tvshow("Homeland", $1, name, id)
     elsif name =~ /^(SexArt|WowGirls|X-Art|JoyMii)/i
       process_porn($1, name, id)
-    elsif name =~ /^(sart\.)/i
+    elsif name =~ /^(sart\.)/i ||
+	  name =~ /-SexArt-/
       process_porn('SexArt', name, id)
     elsif name =~ /^(X\.Art)/i
       process_porn('X-Art', name, id)
