@@ -7,6 +7,22 @@ CP_SRC = "/Users/apple/Downloads/torrents/CouchPotato"
 SICKRAGE_SRC = "/Users/apple/Downloads/torrents/SickRage"
 TVSHOW_DST = "/Volumes/Raid3/thetvdb"
 
+GREEN = 2
+WHITE = 7
+
+class Terminal
+  attr :cols
+
+  def initialize
+    @cols = `tput cols`.to_i
+  end
+
+  def line(str, color)
+    line = str + " " * (@cols - str.length)
+    puts "\e[30;4#{color}m#{line}\e[0m"
+  end
+end
+
 def remove_torrent(id)
   unless $test
     `transmission-remote --torrent #{id} --remove`
@@ -215,7 +231,8 @@ class Entry
       @label = $1
       @remain = $2
       true
-    elsif @remain =~ /^wowg\.\d\d\.\d\d\.\d\d\.(.+)$/
+    elsif @remain =~ /^wowg\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
+          @remain =~ /^wg_(.+)$/
       @label = "WowGirls"
       @remain = $1
       true
@@ -337,8 +354,10 @@ class Entry
     if @remain =~ /^(.+) \d\d \d\d \d\d$/ ||
        @remain =~ /^(.+) \(\d\d\d\d\) 1080p$/ ||
        @remain =~ /^(.+) - HD 1080p - .+$/ ||
-       @remain =~ /^(.+) \d\d \d\d \d\d H264 Ssxxx$/
+       @remain =~ /^(.+) \d\d \d\d \d\d H264 Ssxxx$/ ||
+       @remain =~ /^(.+) \d\d \d\d \d\d\d\d 1080 H264 Ssxxx$/
       @remain = $1
+      puts $1
     end
     TO_REMOVE.each do |str|
       if @remain.gsub!(str, "")
@@ -530,7 +549,7 @@ def process_existing_files
   end until processed == 0
   if unknown_entries.length == 0
     if total == 0
-      puts green("ok")
+      $term.line("ok", GREEN)
     end
   else
     puts red("unrecognized files")
@@ -552,6 +571,7 @@ ARGV.each do |arg|
   end
 end
 
+$term = Terminal.new
 process_existing_files()
 
 list = `transmission-remote --list`
@@ -561,7 +581,7 @@ list.split("\n").each do |line|
   name = line[70..-1]
   if status == "Finished   " ||
      status == "Stopped    "
-    puts inverse(line)
+    $term.line(line, WHITE)
     if name =~ /CSI.+S(\d\d)E\d\d\D/
       process_tvshow("CSI Crime Scene Investigation", $1, name, id)
     elsif name =~ /The.Big.Bang.Theory.S(\d\d)E\d\d\D/
@@ -580,10 +600,12 @@ list.split("\n").each do |line|
     elsif name =~ /^(SexArt|WowGirls|X-Art|JoyMii)/i
       process_porn($1, name, id)
     elsif name =~ /^(sart\.)/i ||
-	  name =~ /-SexArt-/
+          name =~ /-SexArt-/
       process_porn('SexArt', name, id)
     elsif name =~ /^(X\.Art)/i
       process_porn('X-Art', name, id)
+    elsif name =~ /^wg_/
+      process_porn('WowGirls', name, id)
     else
       process_movie(name, id)
     end
