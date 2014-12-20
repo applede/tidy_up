@@ -38,15 +38,9 @@ def move_file(src, dst)
   end
 end
 
-def remove_dir(dir)
+def remove_file(dir)
   unless $test
     `rm -rf "#{dir}"`
-  end
-end
-
-def remove_file(path)
-  unless $test
-    `rm "#{path}"`
   end
 end
 
@@ -147,7 +141,7 @@ class Entry
 
   def keep?()
     ["mp4", "mkv", "MKV", "avi", "smi"].include?(@ext) &&
-    !(@remain =~ /^RARBG.com/)
+    !(@remain =~ /^RARBG.com/ || @remain =~ /\.sample$/)
   end
 
   def new_filename
@@ -371,7 +365,38 @@ class Entry
       true
     elsif @remain.gsub!(/_Ep(\d\d)_/, ' S01E\1 ')
       true
+    elsif @remain =~ / ED /
+      false
     elsif @remain.gsub!(/ (\d) - (\d\d) /, ' S0\1E\2 ')
+      true
+    elsif @remain =~ / (\d\d)(?= )/ ||
+          @remain =~ / (\d\d)$/
+      matched = $&
+      episode = $1
+      season = 1
+      if @src_folder =~ / (\d)기/
+        season = $1
+      elsif @remain =~ /Motto To Love-Ru/
+        season = 2
+      elsif @remain =~ /Shiru Sekai Tenri-hen - (\d\d) / ||
+            @remain =~ /Sekai Tenri-hen (\d\d) /
+        season = 0
+        episode = '%02d' % ($1.to_i + 2)
+      elsif @remain =~ /Shiru Sekai 4-nin to Idol - (\d\d) /
+        season = 0
+        episode = '%02d' % ($1.to_i + 1)
+      elsif @remain =~ /Chuunibyou demo Koi ga Shitai! - (\d\d) /
+        season = 0
+        episode = '%02d' % ($1.to_i + 1)
+      end
+      @remain.gsub!(matched, " S0#{season}E#{episode}")
+      true
+    elsif @remain.gsub!(/ (\d\d)화_/, ' S01E\1 ')
+      true
+    elsif @remain =~ /Toradora! OVA/
+      season = 0
+      episode = '05'
+      @remain.gsub!(' OVA', " S0#{season}E#{episode}")
       true
     else
       false
@@ -464,54 +489,62 @@ def copy_file(src_folder, dst_folder, file)
   end
 end
 
-# return false means the source doesn't exist so the torrent isn't removed
-def process_general(src_folder, dst, name, id)
-  `mkdir -p "#{dst}"`
+def process_general(src_folder, dst_folder, name, id)
+  `mkdir -p "#{dst_folder}"`
   src = "#{src_folder}/#{name}"
   if File.exist?(src)
     if File.directory?(src)
       unrar_any(src)
       Dir.foreach(src) do |file|
         next if [".", ".."].include?(file)
-        copy_file(src, dst, file)
+        copy_file(src, dst_folder, file)
       end
-      remove_dir(src)
+      remove_file(src)
     else # single file
-      copy_file(src_folder, dst, name)
+      copy_file(src_folder, dst_folder, name)
       remove_file(src)
     end
-    remove_torrent(id)
-    return true
   else # maybe in different folder?
     puts "  src not exists"
-    return false
   end
+  remove_torrent(id)
 end
 
 def process_porn(to_folder, name, id)
   process_general(NORMAL_SRC, "/Users/johndoe/Raid2/porn/#{to_folder}", name, id)
 end
 
-def process_tvshow(tvshow, season, name, id)
-  if !process_general(SICKRAGE_SRC, "#{TVSHOW_DST}/#{tvshow}/Season #{season}", name, id)
-    if !process_general(NORMAL_SRC, "#{TVSHOW_DST}/#{tvshow}/Season #{season}", name, id)
-      remove_torrent(id)
+def process_tvshow_folder(src_folder, dst_folder)
+  Dir.foreach(src_folder) do |file|
+    next if [".", ".."].include?(file)
+    if File.directory?("#{src_folder}/#{file}")
+      process_tvshow_folder("#{src_folder}/#{file}", dst_folder)
+    else
+      copy_file(src_folder, dst_folder, file)
     end
   end
 end
 
-def process_tvshow_folder(tvshow, name, id)
-  src_folder = "#{NORMAL_SRC}/#{name}"
-  if not File.exist?(src_folder)
-    src_folder = "#{SICKRAGE_SRC}/#{name}"
+def process_tvshow(tvshow, season, name, id)
+  src_folder = NORMAL_SRC
+  src = "#{src_folder}/#{name}"
+  if not File.exist?(src)
+    src_folder = SICKRAGE_SRC
+    src = "#{src_folder}/#{name}"
   end
 
   dst_folder = "#{TVSHOW_DST}/#{tvshow}"
-  Dir.foreach(src_folder) do |file|
-    next if [".", ".."].include?(file)
-    copy_file(src_folder, dst_folder, file)
+  if season
+    dst_folder = "#{dst_folder}/Season #{season}"
   end
-  remove_dir(src_folder)
+  `mkdir -p "#{dst_folder}"`
+  if File.directory?(src)
+    unrar_any(src)
+    process_tvshow_folder(src, dst_folder)
+  else
+    copy_file(src_folder, dst_folder, name)
+  end
+  remove_file(src)
   remove_torrent(id)
 end
 
@@ -559,6 +592,58 @@ def process_existing_files
   end
 end
 
+TVSHOW = 1
+PROGRAM = 2
+PORN = 3
+
+$show_list = [
+  [ TVSHOW, "CSI Crime Scene Investigation", /CSI.+S(\d\d)E\d\d\D/ ],
+  [ TVSHOW, "The Big Bang Theory", /The.Big.Bang.Theory.S(\d\d)E\d\d\D/ ],
+  [ TVSHOW, "NCIS", /NCIS.S(\d\d)E\d\d./ ],
+  [ TVSHOW, "어떤 마술의 금서목록", /어마금/ ],
+  [ TVSHOW, "어떤 과학의 초전자포", [/To Aru Kagaku no/, /어떤 과학의 초전자포/] ],
+  [ TVSHOW, "토라도라!", [/토라도라/, /Toradora!/] ],
+  [ TVSHOW, "투 러브 트러블", [/To Love-ru/, /Motto To Love-Ru/, /To Love-Ru Trouble/] ],
+  [ TVSHOW, "중2병이라도 사랑이 하고싶어!", [/중2병이라도/, /Chuunibyou demo Koi ga Shitai/] ],
+  [ TVSHOW, "카라스", /Karas/ ],
+  [ TVSHOW, "신만이 아는 세계", /Kami nomi zo/ ],
+  [ TVSHOW, "귀가부 활동기록", /Kitakubu Katsudou Kiroku/ ],
+  [ TVSHOW, "D-Frag!", /D-Frag!/ ],
+  [ PORN, "X-Art", [ /X\.Art/, /X-Art/] ],
+  [ PORN, "SexArt", [ /SexArt/ ] ],
+  [ PORN, "WowGirls", /WowGirls/ ],
+  [ PORN, "JoyMii", /Joymii/ ],
+  [ PROGRAM, "", /^ADOBE/ ],
+]
+
+def process_line(line)
+  id = line[0..3]
+  status = line[57..67]
+  name = line[70..-1]
+  if status != "Finished   " && status != "Stopped    "
+    return
+  end
+  $term.line(line, WHITE)
+  $show_list.each do |info|
+    type, tvshow, pattern = info
+    pattern_list = [pattern].flatten
+    pattern_list.each do |pattern|
+      if name =~ pattern
+        case type
+        when TVSHOW
+          process_tvshow(tvshow, $1, name, id)
+        when PROGRAM
+          remove_torrent(id)
+        when PORN
+          process_porn(tvshow, name, id)
+        end
+        return
+      end
+    end
+  end
+  process_movie(name, id)
+end
+
 $test = false
 $verbose = false
 ARGV.each do |arg|
@@ -576,39 +661,80 @@ process_existing_files()
 
 list = `transmission-remote --list`
 list.split("\n").each do |line|
-  id = line[0..3]
-  status = line[57..67]
-  name = line[70..-1]
-  if status == "Finished   " ||
-     status == "Stopped    "
-    $term.line(line, WHITE)
-    if name =~ /CSI.+S(\d\d)E\d\d\D/
-      process_tvshow("CSI Crime Scene Investigation", $1, name, id)
-    elsif name =~ /The.Big.Bang.Theory.S(\d\d)E\d\d\D/
-      # don't touch for now
-      process_tvshow("The Big Bang Theory", $1, name, id)
-    elsif name =~ /The\.Flash\..+?S(\d\d)E\d\d\./
-      process_tvshow("The Flash (2014)", $1, name, id)
-    elsif name =~ /K-ON!/
-      process_tvshow_folder("K-On!", name, id)
-    elsif name =~ /Infinite Stratos/
-      process_tvshow_folder("Infinite Stratos", name, id)
-    elsif name =~ /Carl Sagan's Cosmos/
-      process_tvshow_folder("Cosmos", name, id)
-    elsif name =~ /Homeland\.S(\d\d)E\d\d\..+/
-      process_tvshow("Homeland", $1, name, id)
-    elsif name =~ /^(SexArt|WowGirls|X-Art|JoyMii)/i
-      process_porn($1, name, id)
-    elsif name =~ /^(sart\.)/i ||
-          name =~ /-SexArt-/
-      process_porn('SexArt', name, id)
-    elsif name =~ /^(X\.Art)/i
-      process_porn('X-Art', name, id)
-    elsif name =~ /^wg_/
-      process_porn('WowGirls', name, id)
-    else
-      process_movie(name, id)
-    end
-  else
-  end
+  process_line(line)
+  # id = line[0..3]
+  # status = line[57..67]
+  # name = line[70..-1]
+  # if status == "Finished   " ||
+  #    status == "Stopped    "
+  #   $term.line(line, WHITE)
+  #   processed = false
+  #   show_list.each do |info|
+  #     type, tvshow, pattern = info
+  #     pattern_list = [pattern].flatten
+  #     pattern_list.each do |pattern|
+  #       if name =~ pattern
+  #         case type
+  #         when TVSHOW
+  #           process_tvshow(tvshow, $1, name, id)
+  #         when ANIME
+  #           process_tvshow(tvshow, "00", name, id)
+  #         when FOLDER
+  #           process_tvshow_folder(tvshow, name, id)
+  #         when PROGRAM
+  #           remove_torrent(id)
+  #         when PORN
+  #           process_porn($1, name, id)
+  #         end
+  #         processed = true
+  #         break
+  #       end
+  #     end
+  #   end
+  #   unless processed
+  #     process_movie(name, id)
+  #   end
+
+    # if name =~ /CSI.+S(\d\d)E\d\d\D/
+    #   process_tvshow("CSI Crime Scene Investigation", $1, name, id)
+    # elsif name =~ /The.Big.Bang.Theory.S(\d\d)E\d\d\D/
+    #   # don't touch for now
+    #   process_tvshow("The Big Bang Theory", $1, name, id)
+    # elsif name =~ /The\.Flash\..+?S(\d\d)E\d\d\./
+    #   process_tvshow("The Flash (2014)", $1, name, id)
+    # elsif name =~ /K-ON!/
+    #   process_tvshow_folder("K-On!", name, id)
+    # elsif name =~ /Infinite Stratos/
+    #   process_tvshow_folder("Infinite Stratos", name, id)
+    # elsif name =~ /Carl Sagan's Cosmos/
+    #   process_tvshow_folder("Cosmos", name, id)
+    # elsif name =~ /Homeland\.S(\d\d)E\d\d\..+/
+    #   process_tvshow("Homeland", $1, name, id)
+    # elsif name =~ /어마금/
+    #   process_tvshow_folder("어떤 마술의 금서목록", name, id)
+    # elsif name =~ /To Aru Kagaku no/
+    #   process_tvshow_folder("어떤 과학의 초전자포", name, id)
+    # elsif name =~ /토라도라/
+    #   process_tvshow_folder("Toradora!", name, id)
+    # elsif name =~ /To Love-Ru/
+    #   process_tvshow_folder("To Love-Ru", name, id)
+    # elsif name =~ /중2병이라도/
+    #   process_tvshow_folder("중2병이라도 사랑이 하고싶어!", name, id)
+    # elsif name =~ /Karas/
+    #
+    # elsif name =~ /^(SexArt|WowGirls|X-Art|JoyMii)/i
+    #   process_porn($1, name, id)
+    # elsif name =~ /^(sart\.)/i ||
+    #       name =~ /-SexArt-/
+    #   process_porn('SexArt', name, id)
+    # elsif name =~ /^(X\.Art)/i
+    #   process_porn('X-Art', name, id)
+    # elsif name =~ /^wg_/
+    #   process_porn('WowGirls', name, id)
+    # elsif name =~ /^ADOBE/
+    #   remove_torrent(id)
+    # else
+    #   process_movie(name, id)
+    # end
+  # end
 end
