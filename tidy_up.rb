@@ -2,6 +2,76 @@
 # $stdout.reopen("/Users/apple/Library/Logs/move_torrent.log", "w")
 # $stderr = $stdout
 
+require 'rss'
+require 'open-uri'
+
+TORRENT_FOLDER = "/Users/apple/Downloads"
+
+class Guids
+  attr :guids
+
+  def initialize(path)
+    @guids = {}
+    @path = path
+    if File.exist?(@path)
+      open(path, "r") do |file|
+        file.readlines.each do |line|
+          @guids[line.strip] = true
+        end
+      end
+    end
+  end
+
+  def new_item?(guid)
+    !@guids[guid.to_s]
+  end
+
+  def downloaded(guid)
+    @guids[guid.to_s] = true
+  end
+
+  def save
+    open(@path, "w") do |file|
+      @guids.keys.each do |guid|
+        file.puts(guid)
+      end
+    end
+  end
+end
+
+def check_rss
+  $guids = Guids.new("guids.txt")
+
+  url = 'http://kickass.so/usearch/victoria%20secret%20fashion%20show/?rss=1'
+  open(url) do |rss|
+    feed = RSS::Parser.parse(rss)
+    puts "Title: #{feed.channel.title}"
+    feed.items.each do |item|
+      if $guids.new_item?(item.guid)
+        puts item
+        puts item.guid
+        file_path = "#{TORRENT_FOLDER}/#{item.title}.torrent"
+        Net::HTTP.start(uri.host) do |http|
+          puts "get " + uri.path + '?' + uri.query
+          resp = http.get(uri.path + '?' + uri.query)
+          if resp.code == '302'
+            uri = URI.escape(resp.header['location'], "[]")
+            puts uri
+            open(file_path, "wb") do |file|
+              file << open(uri).read
+            end
+            $guids.downloaded(item.guid)
+          else
+            puts "not moved"
+          end
+        end
+      end
+    end
+  end
+
+  $guids.save
+end
+
 NORMAL_SRC = "/Users/apple/Downloads/torrents/complete"
 CP_SRC = "/Users/apple/Downloads/torrents/CouchPotato"
 SICKRAGE_SRC = "/Users/apple/Downloads/torrents/SickRage"
@@ -99,23 +169,38 @@ def register_name(name)
 end
 
 TO_REMOVE = [
-  " Xxx 1080p Xxxmegathor",
-  " Xxx 1080p Cporn",
-  " Xxx Mp4 Cporn",
-  " Xxx 1080p Sexyxpixels",
-  " Sexors",
-  " Xxx 1080p Bty",
-  " Xxx 1080p Mp4-ktr",
-  " 1080p",
-  " (2013) [1080p]",
-  " [1080p]",
-  " Fullhd",
-  " (720p)",
-  " Xxx 720p Mov-ktr",
-  " Xxx B00bastic",
-  " Xxx 720p Pornalized",
-  " 1080",
-  " Hd1080"
+  / Xxx 1080p Xxxmegathor$/,
+  / Xxx 1080p Cporn$/,
+  / Xxx Mp4 Cporn$/,
+  / Xxx 1080p Sexyxpixels$/,
+  / Sexors$/,
+  / Xxx 1080p Bty$/,
+  / Xxx 1080p Mp4-ktr$/,
+  / 1080p$/,
+  / \(2013\) \[1080p\]$/,
+  / \[1080p\]$/,
+  / Fullhd$/,
+  / \(720p\)$/,
+  / Xxx 720p Mov-ktr$/,
+  / Xxx B00bastic$/,
+  / Xxx 720p Pornalized$/,
+  / 1080$/,
+  / Hd1080$/,
+  /.1080p.HDTV.x264-RARBG$/,
+  /.FEED.HDTV.1080i.MPEG2-tudou$/,
+  / 720p$/,
+  / \d\d \d\d \d\d$/,
+  / \(\d\d\d\d\) 1080p$/,
+  / - HD 1080p - .+$/,
+  / \d\d \d\d \d\d H264 Ssxxx$/,
+  / \d\d \d\d \d\d\d\d 1080 H264 Ssxxx$/,
+  /.1080i.HDTV.MPEG2-TOPKEK$/,
+  /.720p.HDTV.x264-BATV/,
+  /.HDTV.x264-BATV/,
+  /.FEED.HDTV.1080p.x264-lrn/,
+  / PROPER 720p HDTV x264 AAC - Ozlem/,
+  / 1080p DTS - CopyCat/,
+  / Xxx$/
 ]
 
 class Entry
@@ -140,7 +225,8 @@ class Entry
   end
 
   def keep?()
-    ["mp4", "mkv", "MKV", "avi", "smi"].include?(@ext) &&
+    ext = @ext ? @ext.downcase : ""
+    ["mp4", "mkv", "avi", "smi", "ts"].include?(ext) &&
     !(@remain =~ /^RARBG.com/ || @remain =~ /\.sample$/)
   end
 
@@ -231,15 +317,22 @@ class Entry
       @remain = $1
       true
     elsif @remain =~ /^sart\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
-	  @remain =~ /^(.+)-SexArt-1080p$/
+          @remain =~ /^(.+)-SexArt-1080p$/ ||
+          @remain =~ /^(.+)_SEXART_1080p$/
       @label = "SexArt"
       @remain = $1
+    elsif @remain =~ /^\[SexArt\] (.+) \((.+) - \d\d.\d\d.\d\d\).+/
+      @label = "SexArt"
+      @remain = $1 + ' ' + $2
     elsif @remain =~ /^xart\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
           @remain =~ /^x-art_(.+)$/ ||
           @remain =~ /^X\.Art\.\d\d\.\d\d\.\d\d\.(.+)$/ ||
           @remain =~ /^x\.art\.(.+)$/
       @label = "X-Art"
       @remain = $1
+    elsif @remain =~ /(.+ - )X-Art \((.+)\)/
+      @label = "X-Art"
+      @remain = $1 + $2
     elsif @remain =~ /^Joymii\.(.+)$/ ||
           @remain =~ /^joymii\.\d\d\.\d\d\.\d\d\.(.+)$/
       @label = "JoyMii"
@@ -345,16 +438,8 @@ class Entry
   end
 
   def remove_garbage()
-    if @remain =~ /^(.+) \d\d \d\d \d\d$/ ||
-       @remain =~ /^(.+) \(\d\d\d\d\) 1080p$/ ||
-       @remain =~ /^(.+) - HD 1080p - .+$/ ||
-       @remain =~ /^(.+) \d\d \d\d \d\d H264 Ssxxx$/ ||
-       @remain =~ /^(.+) \d\d \d\d \d\d\d\d 1080 H264 Ssxxx$/
-      @remain = $1
-      puts $1
-    end
-    TO_REMOVE.each do |str|
-      if @remain.gsub!(str, "")
+    TO_REMOVE.each do |pat|
+      if @remain.gsub!(pat, "")
         break
       end
     end
@@ -386,10 +471,10 @@ class Entry
         season = 0
         episode = '%02d' % ($1.to_i + 1)
       elsif @remain =~ /Chuunibyou demo Koi ga Shitai! - (\d\d) /
-        season = 0
-        episode = '%02d' % ($1.to_i + 1)
+        season = 1
+        episode = '%02d' % $1.to_i
       end
-      @remain.gsub!(matched, " S0#{season}E#{episode}")
+      @remain.sub!(matched, " S0#{season}E#{episode}")
       true
     elsif @remain.gsub!(/ (\d\d)화_/, ' S01E\1 ')
       true
@@ -397,6 +482,19 @@ class Entry
       season = 0
       episode = '05'
       @remain.gsub!(' OVA', " S0#{season}E#{episode}")
+      true
+    elsif @remain =~ /The.Victorias.Secret.Fashion.Show.(\d\d\d\d)/ ||
+          @remain =~ /The.Victoria's.Secret.Fashion.Show.(\d\d\d\d)/ ||
+          @remain =~ /Victoria's.Secrets.Fashion.Show.(\d\d\d\d)/ ||
+          @remain =~ /Victoria's Secret Fashion Show (\d\d\d\d)/
+      episode = '%02d' % ($1.to_i - 2014 + 20)
+      matched = $&
+      year = $1
+      @remain.gsub!(matched, "The Victoria's Secret Fashion Show S01E#{episode} #{year}")
+      true
+    elsif @remain =~ /Magical Star Kanon/
+      episode = '05'
+      @remain = "신만이 아는 세계 S00E05"
       true
     else
       false
@@ -414,7 +512,7 @@ class Entry
       end
       remove_garbage()
     elsif parse_episode()
-
+      remove_garbage()
     end
 
     return @label && @names && @names.length > 0 && @ext
@@ -609,11 +707,14 @@ $show_list = [
   [ TVSHOW, "신만이 아는 세계", /Kami nomi zo/ ],
   [ TVSHOW, "귀가부 활동기록", /Kitakubu Katsudou Kiroku/ ],
   [ TVSHOW, "D-Frag!", /D-Frag!/ ],
-  [ PORN, "X-Art", [ /X\.Art/, /X-Art/] ],
-  [ PORN, "SexArt", [ /SexArt/ ] ],
+  [ TVSHOW, "카타나가타리", /Katanagatari/ ],
+  [ TVSHOW, "The Victoria's Secret Fashion Show", [/The.Victorias.Secret.Fashion.Show/, /Victoria's Secret Fashion Show/, /Victoria's Secrets Fashion Show/] ],
+  [ TVSHOW, "Homeland", /Homeland.S(\d\d)E\d\d./ ],
+  [ PORN, "X-Art", [ /X\.Art/, /X-Art/, /X Art/] ],
+  [ PORN, "SexArt", [ /SexArt/, /SEXART/ ] ],
   [ PORN, "WowGirls", /WowGirls/ ],
   [ PORN, "JoyMii", /Joymii/ ],
-  [ PROGRAM, "", /^ADOBE/ ],
+  [ PROGRAM, "", [/^ADOBE/, /^Adobe/] ],
 ]
 
 def process_line(line)
@@ -662,79 +763,4 @@ process_existing_files()
 list = `transmission-remote --list`
 list.split("\n").each do |line|
   process_line(line)
-  # id = line[0..3]
-  # status = line[57..67]
-  # name = line[70..-1]
-  # if status == "Finished   " ||
-  #    status == "Stopped    "
-  #   $term.line(line, WHITE)
-  #   processed = false
-  #   show_list.each do |info|
-  #     type, tvshow, pattern = info
-  #     pattern_list = [pattern].flatten
-  #     pattern_list.each do |pattern|
-  #       if name =~ pattern
-  #         case type
-  #         when TVSHOW
-  #           process_tvshow(tvshow, $1, name, id)
-  #         when ANIME
-  #           process_tvshow(tvshow, "00", name, id)
-  #         when FOLDER
-  #           process_tvshow_folder(tvshow, name, id)
-  #         when PROGRAM
-  #           remove_torrent(id)
-  #         when PORN
-  #           process_porn($1, name, id)
-  #         end
-  #         processed = true
-  #         break
-  #       end
-  #     end
-  #   end
-  #   unless processed
-  #     process_movie(name, id)
-  #   end
-
-    # if name =~ /CSI.+S(\d\d)E\d\d\D/
-    #   process_tvshow("CSI Crime Scene Investigation", $1, name, id)
-    # elsif name =~ /The.Big.Bang.Theory.S(\d\d)E\d\d\D/
-    #   # don't touch for now
-    #   process_tvshow("The Big Bang Theory", $1, name, id)
-    # elsif name =~ /The\.Flash\..+?S(\d\d)E\d\d\./
-    #   process_tvshow("The Flash (2014)", $1, name, id)
-    # elsif name =~ /K-ON!/
-    #   process_tvshow_folder("K-On!", name, id)
-    # elsif name =~ /Infinite Stratos/
-    #   process_tvshow_folder("Infinite Stratos", name, id)
-    # elsif name =~ /Carl Sagan's Cosmos/
-    #   process_tvshow_folder("Cosmos", name, id)
-    # elsif name =~ /Homeland\.S(\d\d)E\d\d\..+/
-    #   process_tvshow("Homeland", $1, name, id)
-    # elsif name =~ /어마금/
-    #   process_tvshow_folder("어떤 마술의 금서목록", name, id)
-    # elsif name =~ /To Aru Kagaku no/
-    #   process_tvshow_folder("어떤 과학의 초전자포", name, id)
-    # elsif name =~ /토라도라/
-    #   process_tvshow_folder("Toradora!", name, id)
-    # elsif name =~ /To Love-Ru/
-    #   process_tvshow_folder("To Love-Ru", name, id)
-    # elsif name =~ /중2병이라도/
-    #   process_tvshow_folder("중2병이라도 사랑이 하고싶어!", name, id)
-    # elsif name =~ /Karas/
-    #
-    # elsif name =~ /^(SexArt|WowGirls|X-Art|JoyMii)/i
-    #   process_porn($1, name, id)
-    # elsif name =~ /^(sart\.)/i ||
-    #       name =~ /-SexArt-/
-    #   process_porn('SexArt', name, id)
-    # elsif name =~ /^(X\.Art)/i
-    #   process_porn('X-Art', name, id)
-    # elsif name =~ /^wg_/
-    #   process_porn('WowGirls', name, id)
-    # elsif name =~ /^ADOBE/
-    #   remove_torrent(id)
-    # else
-    #   process_movie(name, id)
-    # end
-  # end
 end
